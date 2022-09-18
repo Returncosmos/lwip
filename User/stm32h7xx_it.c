@@ -34,6 +34,8 @@
 #include "stm32h7xx_hal.h"
 #include "stm32h7xx.h"
 #include "stm32h7xx_it.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 /* USER CODE BEGIN 0 */
 
@@ -125,15 +127,15 @@ void UsageFault_Handler(void)
 /**
 * @brief This function handles System service call via SWI instruction.
 */
-void SVC_Handler(void)
-{
-  /* USER CODE BEGIN SVCall_IRQn 0 */
+//void SVC_Handler(void)
+//{
+//  /* USER CODE BEGIN SVCall_IRQn 0 */
 
-  /* USER CODE END SVCall_IRQn 0 */
-  /* USER CODE BEGIN SVCall_IRQn 1 */
+//  /* USER CODE END SVCall_IRQn 0 */
+//  /* USER CODE BEGIN SVCall_IRQn 1 */
 
-  /* USER CODE END SVCall_IRQn 1 */
-}
+//  /* USER CODE END SVCall_IRQn 1 */
+//}
 
 /**
 * @brief This function handles Debug monitor.
@@ -151,28 +153,39 @@ void DebugMon_Handler(void)
 /**
 * @brief This function handles Pendable request for system service.
 */
-void PendSV_Handler(void)
-{
-  /* USER CODE BEGIN PendSV_IRQn 0 */
+//void PendSV_Handler(void)
+//{
+//  /* USER CODE BEGIN PendSV_IRQn 0 */
 
-  /* USER CODE END PendSV_IRQn 0 */
-  /* USER CODE BEGIN PendSV_IRQn 1 */
+//  /* USER CODE END PendSV_IRQn 0 */
+//  /* USER CODE BEGIN PendSV_IRQn 1 */
 
-  /* USER CODE END PendSV_IRQn 1 */
-}
+//  /* USER CODE END PendSV_IRQn 1 */
+//}
 
 /**
 * @brief This function handles System tick timer.
 */
+extern void xPortSysTickHandler(void);
+//systick中断服务函数
 void SysTick_Handler(void)
-{
-  /* USER CODE BEGIN SysTick_IRQn 0 */
-
-  /* USER CODE END SysTick_IRQn 0 */
-  HAL_SYSTICK_IRQHandler();
-  /* USER CODE BEGIN SysTick_IRQn 1 */
-
-  /* USER CODE END SysTick_IRQn 1 */
+{	
+  uint32_t ulReturn;
+  /* 进入临界段，临界段可以嵌套 */
+  ulReturn = taskENTER_CRITICAL_FROM_ISR();
+  
+  HAL_IncTick();
+#if (INCLUDE_xTaskGetSchedulerState  == 1 )
+  if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
+  {
+#endif  /* INCLUDE_xTaskGetSchedulerState */  
+  xPortSysTickHandler();
+#if (INCLUDE_xTaskGetSchedulerState  == 1 )
+  }
+#endif  /* INCLUDE_xTaskGetSchedulerState */
+  
+  /* 退出临界段 */
+  taskEXIT_CRITICAL_FROM_ISR( ulReturn );
 }
 
 /******************************************************************************/
