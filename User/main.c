@@ -3,12 +3,12 @@
   * @file    main.c
   * @author  fire
   * @version V1.0
-  * @date    2018-xx-xx
-  * @brief   FreeRTOS v9.0.0 + STM32 动态创建任务
+  * @date    2019-xx-xx
+  * @brief   FreeRTOS V9.0.0 + STM32 LwIP
   *********************************************************************
   * @attention
   *
-  * 实验平台:野火 STM32全系列开发板 
+  * 实验平台:野火  STM32全系列开发板 
   * 论坛    :http://www.firebbs.cn
   * 淘宝    :https://fire-stm32.taobao.com
   *
@@ -20,26 +20,21 @@
 *                             包含的头文件
 *************************************************************************
 */ 
-#include "stm32h7xx.h"
 #include "main.h"
-#include "bsp_led.h"
-#include "bsp_key.h" 
-#include "core_delay.h"   
-#include "bsp_debug_usart.h"
 /* FreeRTOS头文件 */
 #include "FreeRTOS.h"
 #include "task.h"
-
+#include "queue.h"
+#include "client.h"
 /**************************** 任务句柄 ********************************/
 /* 
  * 任务句柄是一个指针，用于指向一个任务，当任务创建好之后，它就具有了一个任务句柄
  * 以后我们要想操作这个任务都需要通过这个任务句柄，如果是自身的任务操作自己，那么
  * 这个句柄可以为NULL。
  */
- /* 创建任务句柄 */
-static TaskHandle_t AppTaskCreate_Handle = NULL;
-/* LED任务句柄 */
-static TaskHandle_t LED_Task_Handle = NULL;
+static TaskHandle_t AppTaskCreate_Handle = NULL;/* 创建任务句柄 */
+static TaskHandle_t Test1_Task_Handle = NULL;/* LED任务句柄 */
+static TaskHandle_t Test2_Task_Handle = NULL;/* KEY任务句柄 */
 
 /********************************** 内核对象句柄 *********************************/
 /*
@@ -53,10 +48,15 @@ static TaskHandle_t LED_Task_Handle = NULL;
  * 
  */
 
-
 /******************************* 全局变量声明 ************************************/
 /*
  * 当我们在写应用程序的时候，可能需要用到一些全局变量。
+ */
+
+
+/******************************* 宏定义 ************************************/
+/*
+ * 当我们在写应用程序的时候，可能需要用到一些宏定义。
  */
 
 
@@ -67,9 +67,10 @@ static TaskHandle_t LED_Task_Handle = NULL;
 */
 static void AppTaskCreate(void);/* 用于创建任务 */
 
-static void LED_Task(void* pvParameters);/* LED_Task任务实现 */
+static void Test1_Task(void* pvParameters);/* Test1_Task任务实现 */
+static void Test2_Task(void* pvParameters);/* Test2_Task任务实现 */
 
-static void BSP_Init(void);/* 用于初始化板载相关资源 */
+extern void TCPIP_Init(void);
 
 /*****************************************************************
   * @brief  主函数
@@ -82,11 +83,11 @@ static void BSP_Init(void);/* 用于初始化板载相关资源 */
 int main(void)
 {	
   BaseType_t xReturn = pdPASS;/* 定义一个创建信息返回值，默认为pdPASS */
-
+  
   /* 开发板硬件初始化 */
   BSP_Init();
-  printf("这是一个[野火]-STM32全系列开发板-FreeRTOS-动态创建任务!\r\n");
-   /* 创建AppTaskCreate任务 */
+
+  /* 创建AppTaskCreate任务 */
   xReturn = xTaskCreate((TaskFunction_t )AppTaskCreate,  /* 任务入口函数 */
                         (const char*    )"AppTaskCreate",/* 任务名字 */
                         (uint16_t       )512,  /* 任务栈大小 */
@@ -112,18 +113,43 @@ int main(void)
 static void AppTaskCreate(void)
 {
   BaseType_t xReturn = pdPASS;/* 定义一个创建信息返回值，默认为pdPASS */
+ 
+  TCPIP_Init();
+
+  client_init();
+  
+  printf("本例程演示开发板发送数据到服务器\n\n");
+  
+  printf("网络连接模型如下：\n\t 电脑<--网线-->路由<--网线-->开发板\n\n");
+  
+  printf("实验中使用TCP协议传输数据，电脑作为TCP Server，开发板作为TCP Client\n\n");
+  
+  printf("本例程的IP地址均在User/arch/sys_arch.h文件中修改\n\n");
+    
+  printf("本例程参考<<LwIP应用实战开发指南>>第15章 使用 NETCONN 接口编程\n\n");
+  
   
   taskENTER_CRITICAL();           //进入临界区
-  
-  /* 创建LED_Task任务 */
-  xReturn = xTaskCreate((TaskFunction_t )LED_Task, /* 任务入口函数 */
-                        (const char*    )"LED_Task",/* 任务名字 */
+
+  /* 创建Test1_Task任务 */
+  xReturn = xTaskCreate((TaskFunction_t )Test1_Task, /* 任务入口函数 */
+                        (const char*    )"Test1_Task",/* 任务名字 */
                         (uint16_t       )512,   /* 任务栈大小 */
                         (void*          )NULL,	/* 任务入口函数参数 */
-                        (UBaseType_t    )2,	    /* 任务的优先级 */
-                        (TaskHandle_t*  )&LED_Task_Handle);/* 任务控制块指针 */
+                        (UBaseType_t    )1,	    /* 任务的优先级 */
+                        (TaskHandle_t*  )&Test1_Task_Handle);/* 任务控制块指针 */
   if(pdPASS == xReturn)
-    printf("创建LED_Task任务成功!\r\n");
+    PRINT_DEBUG("Create Test1_Task sucess...\r\n");
+  
+  /* 创建Test2_Task任务 */
+  xReturn = xTaskCreate((TaskFunction_t )Test2_Task,  /* 任务入口函数 */
+                        (const char*    )"Test2_Task",/* 任务名字 */
+                        (uint16_t       )512,  /* 任务栈大小 */
+                        (void*          )NULL,/* 任务入口函数参数 */
+                        (UBaseType_t    )2, /* 任务的优先级 */
+                        (TaskHandle_t*  )&Test2_Task_Handle);/* 任务控制块指针 */ 
+  if(pdPASS == xReturn)
+    PRINT_DEBUG("Create Test2_Task sucess...\n\n");
   
   vTaskDelete(AppTaskCreate_Handle); //删除AppTaskCreate任务
   
@@ -133,128 +159,37 @@ static void AppTaskCreate(void)
 
 
 /**********************************************************************
-  * @ 函数名  ： LED_Task
-  * @ 功能说明： LED_Task任务主体
+  * @ 函数名  ： Test1_Task
+  * @ 功能说明： Test1_Task任务主体
   * @ 参数    ：   
   * @ 返回值  ： 无
   ********************************************************************/
-static void LED_Task(void* parameter)
+static void Test1_Task(void* parameter)
 {	
-    while (1)
-    {
-        LED1_ON;
-        vTaskDelay(500);   /* 延时500个tick */
-        printf("LED_Task Running,LED1_ON\r\n");
-        
-        LED1_OFF;     
-        vTaskDelay(500);   /* 延时500个tick */		 		
-        printf("LED_Task Running,LED1_OFF\r\n");
-    }
+  while (1)
+  {
+    LED1_TOGGLE;
+//    PRINT_DEBUG("LED1_TOGGLE\n");
+    vTaskDelay(1000);/* 延时1000个tick */
+  }
 }
 
-/***********************************************************************
-  * @ 函数名  ： BSP_Init
-  * @ 功能说明： 板级外设初始化，所有板子上的初始化均可放在这个函数里面
+/**********************************************************************
+  * @ 函数名  ： Test2_Task
+  * @ 功能说明： Test2_Task任务主体
   * @ 参数    ：   
   * @ 返回值  ： 无
-  *********************************************************************/
-static void BSP_Init(void)
-{
-  /* 系统时钟初始化成400MHz */
-	SystemClock_Config();
-  
-  /* 初始化SysTick */
-  HAL_SYSTICK_Config( HAL_RCC_GetSysClockFreq() / configTICK_RATE_HZ );	
-
-	/* 硬件BSP初始化统统放在这里，比如LED，串口，LCD等 */
-    
-	/* LED 端口初始化 */
-	LED_GPIO_Config();	
-	
-	/* usart 端口初始化 */
-  DEBUG_USART_Config();
-
-  /* KEY 端口初始化 */
-  Key_GPIO_Config();
-  
-}
-/**
-  * @brief  System Clock 配置
-  *         system Clock 配置如下: 
-	*            System Clock source  = PLL (HSE)
-	*            SYSCLK(Hz)           = 400000000 (CPU Clock)
-	*            HCLK(Hz)             = 200000000 (AXI and AHBs Clock)
-	*            AHB Prescaler        = 2
-	*            D1 APB3 Prescaler    = 2 (APB3 Clock  100MHz)
-	*            D2 APB1 Prescaler    = 2 (APB1 Clock  100MHz)
-	*            D2 APB2 Prescaler    = 2 (APB2 Clock  100MHz)
-	*            D3 APB4 Prescaler    = 2 (APB4 Clock  100MHz)
-	*            HSE Frequency(Hz)    = 25000000
-	*            PLL_M                = 5
-	*            PLL_N                = 160
-	*            PLL_P                = 2
-	*            PLL_Q                = 4
-	*            PLL_R                = 2
-	*            VDD(V)               = 3.3
-	*            Flash Latency(WS)    = 4
-  * @param  None
-  * @retval None
-  */
-static void SystemClock_Config(void)
-{
-  RCC_ClkInitTypeDef RCC_ClkInitStruct;
-  RCC_OscInitTypeDef RCC_OscInitStruct;
-  HAL_StatusTypeDef ret = HAL_OK;
-  
-  /*使能供电配置更新 */
-  MODIFY_REG(PWR->CR3, PWR_CR3_SCUEN, 0);
-
-  /* 当器件的时钟频率低于最大系统频率时，电压调节可以优化功耗，
-		 关于系统频率的电压调节值的更新可以参考产品数据手册。  */
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
-
-  while(!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
- 
-  /* 启用HSE振荡器并使用HSE作为源激活PLL */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-  RCC_OscInitStruct.HSIState = RCC_HSI_OFF;
-  RCC_OscInitStruct.CSIState = RCC_CSI_OFF;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-
-  RCC_OscInitStruct.PLL.PLLM = 5;
-  RCC_OscInitStruct.PLL.PLLN = 160;
-  RCC_OscInitStruct.PLL.PLLP = 2;
-  RCC_OscInitStruct.PLL.PLLR = 2;
-  RCC_OscInitStruct.PLL.PLLQ = 4;
- 
-  RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
-  RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_2;
-  ret = HAL_RCC_OscConfig(&RCC_OscInitStruct);
-  if(ret != HAL_OK)
+  ********************************************************************/
+static void Test2_Task(void* parameter)
+{	 
+  while (1)
   {
-    while(1) { ; }
-  }
-  
-	/* 选择PLL作为系统时钟源并配置总线时钟分频器 */
-  RCC_ClkInitStruct.ClockType = (RCC_CLOCKTYPE_SYSCLK  | \
-																 RCC_CLOCKTYPE_HCLK    | \
-																 RCC_CLOCKTYPE_D1PCLK1 | \
-																 RCC_CLOCKTYPE_PCLK1   | \
-                                 RCC_CLOCKTYPE_PCLK2   | \
-																 RCC_CLOCKTYPE_D3PCLK1);
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB3CLKDivider = RCC_APB3_DIV2;  
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_APB1_DIV2; 
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV2; 
-  RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV2; 
-  ret = HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4);
-  if(ret != HAL_OK)
-  {
-    while(1) { ; }
+    LED2_TOGGLE;
+//    PRINT_DEBUG("LED2_TOGGLE\n");
+    vTaskDelay(2000);/* 延时2000个tick */
   }
 }
-/****************************END OF FILE***************************/
+
+
+
+/********************************END OF FILE****************************/
